@@ -1,0 +1,172 @@
+---
+title: "Project Praktikum DS IF-E"
+author: "123200138_123200118"
+date: "2022-11-06"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)  #data tidying
+library(dplyr)      #untuk memanipulasi data
+library(here)       #untuk menyimpan dataset 
+library(ggplot2)    #untuk memvisualisasikan data
+library(cluster)    #untuk menganalisis kluster
+library(factoextra) #untuk mengekstrak dan memvisualisasikan hasil analisis multivariant
+library(shiny)      #untuk membuat tampilan GUI
+library(kernlab)    
+library(readxl)     #untuk membaca file excel
+
+#menampilkan dataset dengan variabel objek data1
+here()
+data1 <- read_excel(here("tingkatperkembangandesa.xlsx")) 
+data1
+```
+
+```{r}
+#menampilkan struktur dataset
+str(data1)
+
+#menampilkan ringkasan deskriptif data
+summary(data1)
+
+#mempersempit jangkauan data analisis dengan menyaring data
+data2 <- data1 %>% filter(data1$PROVINSI == "LAMPUNG") 
+data2
+
+```
+
+```{r}
+#menghapus data yang tidak digunakan dan mengubah nama kolom
+databaru <- data2 %>% select(-1:-6,-10,-11) %>% rename(bidang_pemerintahan = 'BIDANG PEMERINTAHAN', bidang_kewilayahan = 'BIDANG KEWILAYAHAN', bidang_kemasyarakatan = 'BIDANG KEMASYARAKATAN')
+```
+
+
+```{r}
+#menampilkan kolom yang digunakan saja dalam bentuk data frame
+datadesa = data.frame(databaru)   
+datadesa
+
+#melakukan tranformasi data menggunakan scalling data : nilai - mean / standar deviasi
+datafix <- scale(datadesa) 
+datafix
+
+#menampilkan data baru dalam bentuk data frame
+view(datadesa)
+
+```
+
+```{r}
+# memvisualisasikan jumlah cluster yang optimal 
+
+# METODE  ELBOW atau WSS
+# dilihat dari grafik yang mulai landai dari yang pertama setelah curam atau titik siku, hasil wss yaitu k = 3
+fviz_nbclust(datafix, kmeans, method = "wss") 
+
+# METODE SILHOUETTE
+# dilihat dari garis tertinggi yaitu K = 2
+fviz_nbclust(datafix, kmeans, method = "silhouette")
+
+# METODE GAP STATISTIC
+# dilihat dari titik tertinggi yaitu K = 3
+dim(datadesa)
+set.seed(9999)      #Mengunci data, nilainya ditentukan sendiri
+
+gap_stat <-clusGap(datafix, FUN=kmeans, nstart=300, K.max=3, B= 1594)
+fviz_gap_stat(gap_stat) #memperkirakan jumlah cluster
+
+#Jadi dari 3 metode menghasilkan jumlah cluster yang sama yaitu 3
+```
+
+```{r}
+final <- kmeans(datafix, 3)
+final
+```
+
+```{r}
+
+#memvisualisasi hasil klasterisasi
+fviz_cluster(final, data = datafix ) 
+    datadesa %>%
+    mutate(Cluster = final$cluster) %>%
+    group_by(Cluster) %>%
+    summarise_all("mean")
+    #jika kluster masih ada yg saling menimpa maka belum dapat dikatakan ideal
+    
+  #membuat data frame hasil clusterisasi dengan nilai transformasi
+finaldata=data.frame(datafix, final$cluster)
+View(finaldata)
+    
+#visualisasi lain dalam bentuk persebaran
+pairs(datafix,col=c(1:3)[final$cluster],pch=16)
+
+```
+```{r}
+boxplot(datafix)
+pairs(datafix,col=c(1:3)[final$cluster],pch=16)
+```
+
+
+```{r}
+
+ui <- fluidPage(
+  titlePanel("HASIL ANALISIS CLUSTERING"),
+    mainPanel(
+      tabsetPanel(type = "tabs",
+                  
+                  tabPanel("Metode WSS", plotOutput("metode1")),
+                  tabPanel("Metode Silhouette", plotOutput("metode2")),
+                  tabPanel("Metode Gap Statistic", plotOutput("metode3")),
+                  tabPanel("Data", DT::dataTableOutput('tbl')),
+                  tabPanel("Clustering", plotOutput("cluster")),
+                  tabPanel("Finalisasi", DT::dataTableOutput("simpulan"))
+                  
+      )
+    )
+)
+server <- function(input,output){
+    output$metode1 <- renderPlot({
+    fviz_nbclust(datafix, kmeans, method = "wss") 
+  })
+  output$metode2 <- renderPlot({
+    fviz_nbclust(datafix, kmeans, method = "silhouette") 
+  })
+  output$metode3 <- renderPlot({
+    #gap_stat <-clusGap(datafix, FUN=kmeans, nstart=300, K.max=3, B= 1594)
+    #fviz_gap_stat(gap_stat)
+  })
+  output$tbl = DT::renderDataTable({
+    DT::datatable(finaldata, options= list(lengthChange = FALSE))
+  })
+  output$cluster <- renderPlot({
+    fviz_cluster(final, data = datafix ) 
+  })
+   output$simpulan <- DT::renderDataTable({
+    d <- datadesa %>%
+    mutate(Cluster = final$cluster) %>%
+    group_by(Cluster) %>%
+    summarise_all("mean")
+    
+    DT::datatable(d, options= list(lengthChange = FALSE))
+  })
+  
+}
+shinyApp(ui = ui, server = server)
+```
+
+
+
+
+
+
+
+
+
+
